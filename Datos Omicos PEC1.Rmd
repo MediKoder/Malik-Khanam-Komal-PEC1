@@ -1,0 +1,270 @@
+---
+title: "Datos Omicos PEC1"
+subtitle: 'Prueba de evaluación contínua 1'
+author: "Komal Malik Khanam"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+header-includes:
+  - \usepackage{fvextra}\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+editor_options:
+  markdown:
+  wrap: 80
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=90),tidy=TRUE)
+```
+
+Configuro el entorno R, instalando y cargando el paquete "SummarizedExperiment"
+
+```{r Sumexp}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+BiocManager::install("SummarizedExperiment")
+library(SummarizedExperiment)
+```
+
+## Summarized Experiment
+Se descarga el dataset del repositorio indicado en la PEC. Se descarga el archivo zip y se exploran los diferentes datasets. Escogeré el dataset "MetabotypingPaper" para el ejercicio, aunque no se realizará un análisis estadístico tan exhaustivo como se puede realizar.
+
+```{r}
+# Cargo los datos
+data_values <- read.csv("/Users/Komal/Documents/UOC/Datos ómicos/PEC1/metaboData-main/Datasets/2018-MetabotypingPaper/DataValues_S013.csv", row.names = 1)
+data_info <- read.csv("/Users/Komal/Documents/UOC/Datos ómicos/PEC1/metaboData-main/Datasets/2018-MetabotypingPaper/DataInfo_S013.csv", row.names = 1)
+```
+
+Comprobamos la estructura de datos
+
+```{r}
+dim(data_values)
+dim(data_info)
+```
+
+Se puede observar que se trata de un conjunto de datos con 695 variables de 39 sujetos. También disponemos de información como tipo de variable y una descripción sobre cada variable. Opcionalmente podemos observar los nombres de todas las variables. Para el ejercicio sólo muestro el nombre de las primeras columnas.
+
+```{r}
+head(colnames(data_values))
+head(colnames(data_info))
+```
+
+```{r}
+# Tras observar las variables, convertiré la columna 'SUJETOS' en nombres de fila
+rownames(data_values) <- data_values$SUBJECTS
+
+# Elimino la columna 'SUBJECTS' de data_values
+data_values <- data_values[, -which(colnames(data_values) == "SUBJECTS")]
+
+# Compruebo correcta asignación y la eliminación
+head(rownames(data_values))
+dim(data_values)
+```
+
+Ahora usaré la columna 'SURGERY' que define el tipo de cirugía a la que se sometió a cada sujeto y 'GENDER', para definir información del grupo al que pertenece cada sujeto.
+
+```{r}
+# Crearé col_data usando la columna 'SURGERY' como información de grupo
+col_data <- DataFrame(
+    Group = data_values$SURGERY,
+    Gender = data_values$GENDER
+)
+# Eliminamos las columnas 'SURGERY' y 'GENDER' de data_values para que solo queden las variables de medición
+data_values <- data_values[, !(colnames(data_values) %in% c("SURGERY", "GENDER"))]
+
+# Confirmo que colData y data_values están alineados
+dim(col_data)
+dim(data_values)
+```
+'col_data' muestra correctamente una fila por sujeto y data_values ahora muestra 692 variables tras eliminar 'SURGERY'.
+
+Por otro lado, el conjunto que contenía información sobre las variables 'data_info' aún incluye 'SUBJECTS', 'SURGERY' y 'GENDER' como variables. Las elimino antes de proceder.
+
+```{r}
+# Filtrar data_info para excluir 'SUBJECTS' y 'SURGERY'
+data_info_filtered <- data_info[!(rownames(data_info) %in% c("SUBJECTS", "SURGERY", "GENDER")), ]
+
+# Creamos row_data usando los datos filtrados anteriores
+row_data <- DataFrame(data_info_filtered)
+
+# Confirmación
+dim(row_data)
+```
+
+A continuación, crearé el objeto Summarized Experiment (se). Añado información de sujetos con col_data y información de las variables con row_data. Se transpone la matriz de data_values ya que en formato de SE las columnas deben mostrar información sobre sujetos.
+
+```{r}
+# El objeto SummarizedExperiment
+se <- SummarizedExperiment(
+    assays = list(counts = as.matrix(t(data_values))),
+    colData = col_data,
+    rowData = row_data)
+
+# Mostramos el objeto SummarizedExperiment
+print(se)
+```
+
+Voy a añadir descripción de los datos que obtengo de su paper publicado (Metabotypes of response to bariatric surgery independent of the magnitude of weight loss)
+
+```{r}
+# Información del estudio
+Info <- list(
+    Name = "Magali Palau-Rodriguez, Sara Tulipani, Anna Marco-Ramell, Antonio Miñarro, Olga Jauregui, Alex Sanchez-Pla, Bruno Ramos-Molina, Francisco J. Tinahones, Cristina Andres-Lacueva",
+    Contact = "candres@ub.edu",
+    Title = "Metabotypes of response to bariatric surgery independent of the magnitude of weight loss",
+    DOI = "https://doi.org/10.1371/journal.pone.0198214",
+    PMID = "29856816",
+    URL = "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0198214&type=printable"
+)
+
+# Crearé el objeto MIAME con la información
+myDesc <- new("MIAME",
+              name = Info[["Name"]],
+              contact = Info[["Contact"]],
+              title = Info[["Title"]],
+              pubMedIds = Info[["PMID"]],
+              url = Info[["URL"]])
+print(myDesc)
+
+# Lo añadimos en metadata
+metadata(se) <- list(MIAME = myDesc)
+```
+
+```{r}
+str(se)
+```
+
+# Analisis Estadísitico básico
+
+Ahora, procederé a realizar un pequeño analisis descriptivo general de los datos en el momento de la inclusión. Primero, observo las variables recogidas con colnames(), pero no se muestra el resultado completo de 692 variables en el documento.
+
+```{r eval=TRUE, include=FALSE}
+colnames(data_values)
+```
+
+Por la disposición de datos, puedo observar que T0 se refiere a los datos en el momento de inicio de estudio. Por lo tanto, datos basales. Crearé un subset con datos descriptivos y antropomórficos. Aquí asumo que las variables "AGE", "PESO_T0", "BMI_T0", "CAD_T0", "CINT_T0" ,"CC_T0" se refieren respectivamente a (edad, genero, peso, IMC, circunferencia de cadera, circunferencia de cintura, ratio cadera-cintura)
+
+```{r}
+# Selecciono las variables de interés
+datos_iniciales <- c("AGE","PESO_T0", "bmi_T0", "CAD_T0", "CINT_T0" ,"CC_T0")
+
+# Creo el subset
+subset_se <- se[datos_iniciales, ]
+
+# Verifico las dimensiones del subset y los nombres de las variables
+dim(subset_se)
+rownames (subset_se)
+```
+
+Para analizar calcularé las medias de cada variable en grupo bypass y tubular, para luego compararlas con Test T de student. Esto me dará un análisis descriptivo muy básico de los pacientes en el momento de iniciar el estudio.
+
+```{r}
+# Genero un nuevo conjunto extrayendo los datos mencionados anteriormente
+subset_data <- assay(subset_se)
+dim(subset_data)
+rownames(subset_data)
+colnames(subset_data)
+
+# Transpongo los datos para analizar
+subset_data_transposed <- t(subset_data)
+colnames(subset_data_transposed)
+str(subset_data_transposed)
+
+# Los transformo en datos númericos
+subset_data_transposed <- data.frame(apply(subset_data_transposed, 2, as.numeric))
+
+# Compruebo de nuevo
+str(subset_data_transposed)
+
+# Extraigo la información de los grupos
+group <- colData(subset_se)$Group
+
+# Creo un data frame con los datos transpuestos y el grupo
+data_with_group <- data.frame(subset_data_transposed, Group = group)
+
+# Calcular la media de cada variable para el grupo 'bypass'
+mean_bypass <- round(colMeans(data_with_group[data_with_group$Group == "by pass", -ncol(data_with_group)], na.rm = TRUE), 2)
+
+# Calcular la media de cada variable para el grupo 'tubular'
+mean_tubular <- round(colMeans(data_with_group[data_with_group$Group == "tubular", -ncol(data_with_group)], na.rm = TRUE), 2)
+
+# Mostro las medias para ambos grupos
+mean_bypass
+mean_tubular
+
+# Aplico ahora la prueba t- test de student
+t_test_results <- apply(data_with_group[, -ncol(data_with_group)], 2, function(x) {
+    t.test(x ~ data_with_group$Group)$p.value
+})
+
+# Mostrar los valores p de cada variable
+t_test_results <- round(t_test_results, 2)
+```
+
+Creo una tabla para mostrar los resultados
+```{r}
+if (!requireNamespace("knitr", quietly = TRUE))
+   install.packages("knitr")
+
+library(knitr)
+# Primero una tabla con los resultados
+results_table <- data.frame(
+    Mean_Bypass = mean_bypass,
+    Mean_Tubular = mean_tubular,
+    p_value = t_test_results
+)
+
+kable(results_table, format = 'markdown', caption = "Medias por Grupo y Resultados del Test t de Student")
+```
+
+
+Se puede observar que en ambos grupos en el momento de iniciar el estudio, las características de los pacientes son similares sin diferencias estadísticas (considerando p < 0.05 para significación estadística).
+
+Si el interés fuera estudiar sólo las pacientes de genero femenino, se pueden aislar esos datos.
+
+```{r}
+subset_female <- se[, colData(se)$Gender == "F"]
+
+# Confirmo que el subset contiene solo pacientes femeninas
+colData(subset_female)$Gender
+```
+
+Se puede hacer un pequeño analisis descriptivo en este subconjunto. Para ello escojo las pacientes mujeres y las variables anteriormente selecciondos.
+
+```{r}
+dim(subset_female)
+# Selecciono las variables de interés previamente seleccionados en 'datos_iniciales'
+subset_fem <- subset_female[datos_iniciales, ]
+dim(subset_fem)
+
+# Aplico los pasos de antes
+subset_fem <- assay(subset_fem)
+subset_fem_t <- t(subset_fem)
+subset_fem_t <- data.frame(apply(subset_fem_t,2,as.numeric))
+group_fm <- colData(subset_female)$Group
+data_with_group_fm <- data.frame(subset_fem_t, Group = group_fm)
+
+# Calculo las medias
+mean_bypass_fm <- round(colMeans(data_with_group_fm[data_with_group_fm$Group == "by pass", -ncol(data_with_group_fm)], na.rm = TRUE),2)
+mean_tubular_fm <- round(colMeans(data_with_group_fm[data_with_group_fm$Group == "tubular", -ncol(data_with_group_fm)], na.rm = TRUE), 2)
+
+# Aplico la prueba t- test de student
+t_test_results_fm <- apply(data_with_group_fm[, -ncol(data_with_group_fm)], 2, function(x) {
+    t.test(x ~ data_with_group_fm$Group)$p.value
+})
+
+# Mostro los resultados en tabla
+results_table_fm <- data.frame(
+    Mean_Bypass = mean_bypass_fm,
+    Mean_Tubular = mean_tubular_fm,
+    p_value = round(t_test_results_fm, 2)
+)
+
+kable(results_table_fm, format = 'markdown', caption = "Medias por Grupo y Resultados del Test t de Student en pacientes de genero femenino")
+```
+
+En este subgrupo, hay diferencia significativa en BMI en el momento de iniciar el estudio. Por lo tanto, puede generar un sesgo en el momento de interpretación de reultados.
+
+Tras estos dos ejemplos sencillos de análisis descriptivo inicial, se puede ampliar mucho más el análisis estadístico o crear más subsets, pero no es el objetivo de la actividad. A continuación, se crea el informe que se guarda en pdf con nombre de "datos-omicos_PEC1.pdf", se guarda el archivo .rmd para subir en el repositorio y creo un pequeño archivo de texto README.txt con descripción general de la actividad. 
+
